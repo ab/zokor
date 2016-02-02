@@ -8,7 +8,7 @@ require 'uri'
 require 'proxifier'
 
 # TODO: not sure if this is desirable
-# Thread.abort_on_exception = true
+Thread.abort_on_exception = true
 
 unless defined?(SafeOpenSSLSettings)
   SafeOpenSSLSettings = true
@@ -290,7 +290,7 @@ class ProxyMagic
 
   def self.usage
     STDERR.puts <<-EOM
-usage: #{File.basename($0)} LOCAL_PORT TARGET_HOST TARGET_PORT [PROXY_URL]
+usage: #{File.basename($0)} [--ssl] LOCAL_PORT TARGET_HOST TARGET_PORT [PROXY_URL]
 
 Version: #{VERSION}
     EOM
