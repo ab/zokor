@@ -51,7 +51,7 @@ module Zokor
     def format_message(level, *args)
       if self.class::Colors::SCHEMA[@logdev.dev] && @logdev.dev.tty?
         begin
-          index = self.class.const_get(level.sub('ANY','UNKNOWN'))
+          index = self.class.const_get(level.sub('ANY', 'UNKNOWN'))
           color_name = self.class::Colors::SCHEMA[@logdev.dev][index]
           color = self.class::Colors.const_get(color_name.to_s.upcase)
         rescue NameError
