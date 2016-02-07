@@ -2,18 +2,19 @@ require 'logger'
 
 module Zokor
   def self.log_level
-    return @log_level if @log_level
-
+    @log_level ||= log_level!
+  end
+  def self.log_level=(level)
+    @log_level = Integer(level)
+  end
+  def self.log_level!
     level = ENV['LOG_LEVEL']
     return Integer(level) if level && !level.empty?
 
     Logger::INFO
   end
-  def self.log_level=(level)
-    @log_level = Integer(level)
-  end
 
-  module Colors
+  module TermColors
     NOTHING      = '0;0'
     BLACK        = '0;30'
     RED          = '0;31'
@@ -49,11 +50,11 @@ module Zokor
 
   class ColoredLogger < Logger
     def format_message(level, *args)
-      if self.class::Colors::SCHEMA[@logdev.dev] && @logdev.dev.tty?
+      if TermColors::SCHEMA[@logdev.dev] && @logdev.dev.tty?
         begin
           index = self.class.const_get(level.sub('ANY', 'UNKNOWN'))
-          color_name = self.class::Colors::SCHEMA[@logdev.dev][index]
-          color = self.class::Colors.const_get(color_name.to_s.upcase)
+          color_name = TermColors::SCHEMA[@logdev.dev][index]
+          color = TermColors.const_get(color_name.to_s.upcase)
         rescue NameError
           color = '0;0'
         end

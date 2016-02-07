@@ -1,4 +1,99 @@
 #!/usr/bin/env ruby
+$VERBOSE = true # enable warnings
 
-# TODO
-raise NotImplementedError.new
+require 'optparse'
+
+require_relative '../lib/zokor'
+
+def parse_args(args)
+  options = {local_host: '127.0.0.1'}
+
+  optparse = OptionParser.new do |opts|
+    opts.banner = <<-EOM
+usage: #{opts.program_name} [options] LOCAL_PORT EXT_HOST EXT_PORT
+
+Start a TCP forwarding server on LOCAL_PORT. Send packets to EXT_HOST:EXT_PORT.
+Use --proxy to specify an intermediate proxy server to pass through.
+
+For example:
+
+  Listen on local port 8080, proxy through an intermediate proxy at
+  int.example.com, and send packets to an external proxy at
+  ext.example.com:443. Use TLS for the connection to the external proxy.
+  $ zokor --ssl --proxy http://int.example.com 8080 ext.example.com 443
+
+Options:
+    EOM
+
+    opts.version = Zokor::VERSION
+
+    opts.on_tail('-h', '--help', 'Display this message') do
+      STDERR.puts opts
+      STDERR.puts
+      exit
+    end
+    opts.on_tail('-V', '--version', 'Print version') do
+      puts opts.ver
+      exit
+    end
+    opts.on_tail('-v', '--verbose', 'Be verbose') do
+      Zokor.log_level -= 1
+    end
+    opts.on_tail('-d', '--debug', 'Print debug messages') do
+      Zokor.log_level = Logger::DEBUG
+      ENV['LOG_CHUNDER'] = '1'
+    end
+
+    opts.on('-p', '--proxy URL', 'Proxy through URL') do |arg|
+      options[:proxy_url] = arg
+    end
+
+    opts.on('-l', '--local-host HOST',
+            'Listen on local HOST, not 127.0.0.1', ' ') do |arg|
+      options[:local_host] = arg
+    end
+
+    #
+
+    opts.on('-s', '--ssl', 'Use TLS for the external proxy') do
+      options[:use_ssl] = true
+    end
+
+    opts.on('-C', '--ca-file FILE', 'Specify TLS CA file') do |arg|
+      options[:ssl_ca_file] = arg
+    end
+    opts.on('-E', '--cert FILE', 'Specify TLS client certificate') do |arg|
+      options[:ssl_cert] = arg
+    end
+    opts.on('-E', '--cert FILE', 'Specify TLS client certificate') do |arg|
+      options[:ssl_cert] = arg
+    end
+    opts.on('-k', '--key FILE', 'Specify TLS client key', ' ') do |arg|
+      options[:ssl_key] = arg
+    end
+
+    #
+
+  end
+
+  optparse.parse!(args)
+
+  if args.length != 3
+    STDERR.puts optparse
+    STDERR.puts
+    exit 1
+  end
+
+  local_port, remote_host, remote_port = args
+
+  local_port = Integer(local_port)
+  remote_port = Integer(remote_port)
+
+  pm = Zokor::ProxyMagic.new(options.fetch(:local_host), local_port,
+                             remote_host, remote_port, options)
+  pm.run_loop
+end
+
+if $0 == __FILE__
+  parse_args(ARGV.dup)
+end
