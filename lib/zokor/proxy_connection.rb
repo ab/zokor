@@ -7,9 +7,25 @@ module Zokor
   class ProxyConnection
     BlockSize = 1024 * 4
 
+    # Create a new connection object to wrap a local client connection and
+    # ferry packets through the proxies.
+    #
+    # @param local_socket [TCPSocket] The local inbound connection.
+    # @param remote_host [String]
+    # @param remote_port [Integer]
+    # @param opts [Hash]
+    #
+    # @option opts [String] :proxy_url Intermediate proxy URL to connect
+    #   through.
+    # @option opts [Boolean] :use_ssl Whether to use SSL/TLS for the external
+    #   proxy connection
+    # @option opts [Hash] :ssl_opts A hash of SSL options to pass to
+    #   {ProxyConnection#create_ssl_socket}
+    #
     def initialize(local_socket, remote_host, remote_port, opts={})
       @proxy_url = opts[:proxy_url]
       @use_ssl = opts[:use_ssl]
+      @ssl_opts = opts.fetch(:ssl_opts, {})
 
       @local_socket = local_socket
       @remote_host = remote_host
@@ -18,6 +34,8 @@ module Zokor
       log.info('new local connection')
     end
 
+    # Connect to the proxies and begin ferrying packets. This method will loop
+    # indefinitely until the connection is closed by client or server.
     def connect
 
       local = @local_socket
@@ -37,13 +55,11 @@ module Zokor
         rd_ready, _, _ = IO.select(read_set, nil, nil, 2)
 
         if rd_ready.nil?
-          # log.chunder('TIMEOUT')
-          # require 'pry'; binding.pry # XXX
+          log.chunder('select TIMEOUT')
           next
         end
 
-        # log.chunder('read ready: ' + rd_ready.inspect)
-        # require 'pry'; binding.pry
+        log.chunder {'read ready: ' + rd_ready.inspect}
 
         if rd_ready.include?(local)
           data = local.recv(BlockSize)
@@ -113,19 +129,38 @@ module Zokor
       end
 
       if @use_ssl
-        create_ssl_socket(tcp_socket)
+        create_ssl_socket(tcp_socket, @ssl_opts)
       else
         tcp_socket
       end
     end
 
-    def create_ssl_socket(tcp_socket)
+    # @param [TCPSocket] tcp_socket
+    # @param [Hash] opts
+    #
+    # @option opts [String] :ca_file
+    # @option opts [String] :ca_path
+    # @option opts [OpenSSL::X509::Certificate] :cert
+    # @option opts [OpenSSL::PKey::PKey] :key
+    #
+    # @return [OpenSSL::SSL::SSLSocket]
+    def create_ssl_socket(tcp_socket, opts)
       log.info('Beginning SSL handshake')
       ssl_context = OpenSSL::SSL::SSLContext.new()
-      # ssl_context.cert = OpenSSL::X509::Certificate.new(File.open("client.crt"))
-      # ssl_context.key = OpenSSL::PKey::RSA.new(File.open("client.key"))
       ssl_context.verify_mode = OpenSSL::SSL::VERIFY_PEER
-      ssl_context.ca_file = '/home/andy/gov/dhs/proxy/tls.crt' # TODO XXX DEBUG
+
+      ssl_context.set_params(opts)
+
+      # ssl_context.cert = File.open(opts[:cert]) if opts[:cert]
+      # ssl_context.key = File.open(opts[:key]) if opts[:key]
+      # ssl_context.ca_file = opts[:ca_file] if opts[:ca_file]
+      # ssl_context.ca_path = opts[:ca_path] if opts[:ca_path]
+
+      # by default, use default cert store
+      if !opts[:ca_file] && !opts[:ca_path]
+        ssl_context.cert_store = default_cert_store
+      end
+
       ssl_socket = OpenSSL::SSL::SSLSocket.new(tcp_socket, ssl_context)
       ssl_socket.sync_close = true
 
@@ -209,7 +244,7 @@ module Zokor
     ensure
       log.chunder('done ssl_socket_write')
     end
-    #
+
     # Read in a blocking fashion from the given SSLSocket.
     # This handles the appropriate subtleties of waiting for necessary
     # reads/writes with the underlying IO, which makes a simple IO.select and
@@ -244,12 +279,17 @@ module Zokor
       log.chunder('done ssl_socket_read')
     end
 
+    # Return an OpenSSL X509 CA certificate store wrapping the system default
+    # certificate authorities.
+    #
+    # TODO: make this work on Windows
+    #
+    # @return [OpenSSL::X509::Store]
     def default_cert_store
       store = OpenSSL::X509::Store.new
       store.set_default_paths
 
-      # TODO: handle windows
-
+      store
     end
 
     def label

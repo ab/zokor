@@ -16,8 +16,18 @@ module Zokor
       @server = serve(local_host, local_port)
 
       if @opts[:proxy_url]
-        log.info "Will proxy through #{@opts.fetch(:proxy_url)}"
+        log.info "Intermediate proxy: #{@opts.fetch(:proxy_url)}"
+      else
+        log.info "Intermediate proxy: none"
       end
+
+      if @opts[:use_ssl]
+        ssl_msg = '[SSL]'
+      else
+        ssl_msg = '[no SSL]'
+      end
+
+      log.info "External proxy: #{ssl_msg} #{remote_host}:#{remote_port}"
     end
 
     def serve(local_host, local_port)
@@ -26,12 +36,11 @@ module Zokor
       port = server.addr[1]
       addrs = server.addr[2..-1].uniq
       log.info "Listening on #{addrs.collect{|a|"#{a}:#{port}"}.join(' ')}"
-
       server
     end
 
     def run_loop
-      log.info "Starting main loop"
+      log.info "Starting main loop..."
 
       # Add thread to process Ctrl-C on Windows
       _sleep_thread = Thread.new { loop { sleep 1 } }
