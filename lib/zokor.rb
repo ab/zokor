@@ -3,6 +3,7 @@ require 'openssl'
 require_relative 'zokor/version'
 require_relative 'zokor/logger'
 
+require_relative 'zokor/config'
 require_relative 'zokor/proxy_connection'
 require_relative 'zokor/proxy_magic'
 

@@ -10,7 +10,7 @@ def parse_args(args)
 
   optparse = OptionParser.new do |opts|
     opts.banner = <<-EOM
-usage: #{opts.program_name} [options] LOCAL_PORT EXT_HOST EXT_PORT
+usage: #{opts.program_name} [options] [LOCAL_PORT EXT_HOST EXT_PORT]
 
 Start a TCP forwarding server on LOCAL_PORT. Send packets to EXT_HOST:EXT_PORT.
 Use --proxy to specify an intermediate proxy server to pass through.
@@ -33,7 +33,8 @@ Options:
       exit
     end
     opts.on_tail('-V', '--version', 'Print version') do
-      puts opts.ver
+      # puts opts.ver
+      puts 'zokor ' + Zokor::VERSION
       exit
     end
     opts.on_tail('-v', '--verbose', 'Be verbose') do
@@ -42,6 +43,10 @@ Options:
     opts.on_tail('-d', '--debug', 'Print debug messages') do
       Zokor.log_level = Logger::DEBUG
       ENV['LOG_CHUNDER'] = '1'
+    end
+
+    opts.on('-c', '--config FILE', 'Use given config file') do |arg|
+      options[:config_file] = arg
     end
 
     opts.on('-p', '--proxy URL', 'Proxy through URL') do |arg|
@@ -82,10 +87,27 @@ Options:
 
   optparse.parse!(args)
 
-  if args.length != 3
-    STDERR.puts optparse
-    STDERR.puts
-    exit 1
+  config = Zokor::Config.new(options[:config_file])
+  options = options.merge(config.load_config)
+
+  if args.empty?
+    # assume arguments being passed by config file
+    unless options[:local_host] && options[:local_port] &&
+           options[:remote_host] && options[:remote_port]
+      STDERR.puts optparse
+      STDERR.puts 'Error: must specify port and host by config or args'
+      exit 1
+    end
+  else
+    # host/port arguments being passed on command line
+    if args.length != 3
+      STDERR.puts optparse
+      STDERR.puts
+      exit 1
+    end
+    options[:local_port] = Integer(args.fetch(0))
+    options[:remote_host] = args.fetch(1)
+    options[:remote_port] = Integer(args.fetch(2))
   end
 
   # auto enable SSL if SSL options given
@@ -93,13 +115,11 @@ Options:
     options[:use_ssl] = true
   end
 
-  local_port, remote_host, remote_port = args
-
-  local_port = Integer(local_port)
-  remote_port = Integer(remote_port)
-
-  pm = Zokor::ProxyMagic.new(options.fetch(:local_host), local_port,
-                             remote_host, remote_port, options)
+  pm = Zokor::ProxyMagic.new(options.fetch(:local_host),
+                             options.fetch(:local_port),
+                             options.fetch(:remote_host),
+                             options.fetch(:remote_port),
+                             options)
   pm.run_loop
 end
 

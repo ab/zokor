@@ -27,7 +27,6 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
 
   spec.add_dependency 'proxifier', '~> 1.0'
-  spec.add_dependency 'subprocess', '~> 1.2'
 
   spec.add_development_dependency 'bundler', '~> 1.3'
   spec.add_development_dependency 'pry'
