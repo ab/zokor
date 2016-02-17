@@ -6,21 +6,23 @@ require 'optparse'
 require_relative '../lib/zokor'
 
 def parse_args(args)
-  options = {local_host: '127.0.0.1', ssl_opts: {}}
+  options = {local_host: '127.0.0.1', local_port: 8080, ssl_opts: {}}
 
   optparse = OptionParser.new do |opts|
     opts.banner = <<-EOM
-usage: #{opts.program_name} [options] [LOCAL_PORT EXT_HOST EXT_PORT]
+usage: #{opts.program_name} [options]
 
-Start a TCP forwarding server on LOCAL_PORT. Send packets to EXT_HOST:EXT_PORT.
-Use --proxy to specify an intermediate proxy server to pass through.
+Start a TCP forwarding server on LOCAL_PORT (default #{options[:local_port]}). Send packets to
+EXT_HOST:EXT_PORT. Use --proxy to pass through an intermediate proxy server.
+
+Configuration by default is stored in #{Zokor::Config::DEFAULT_CONFIG_DIR}/zokor.yaml
 
 For example:
 
-  Listen on local port 8080, proxy through an intermediate proxy at
-  int.example.com, and send packets to an external proxy at
-  ext.example.com:443. Use TLS for the connection to the external proxy.
-  $ zokor --ssl --proxy http://int.example.com 8080 ext.example.com 443
+  Listen on local port 8080, proxy through an intermediate proxy at 192.0.2.1,
+  and send packets to an external proxy at example.com:443. Use TLS for the
+  connection to the external proxy.
+  $ zokor -l 8080 -H example.com -P 443 --ssl --proxy http://192.0.2.1
 
 Options:
     EOM
@@ -45,17 +47,40 @@ Options:
       ENV['LOG_CHUNDER'] = '1'
     end
 
-    opts.on('-c', '--config FILE', 'Use given config file') do |arg|
-      options[:config_file] = arg
+    opts.on('-c', '--config DIR', 'Use given config directory') do |arg|
+      options[:config_dir] = arg
     end
+
+    opts.on('--init-config', 'Initialize configuration') do
+      options[:init_config] = true
+    end
+
+    opts.on('--install-cert', 'Install certificate from standard input',
+            ' ') do
+      options[:install_cert] = true
+    end
+
+    #
 
     opts.on('-p', '--proxy URL', 'Proxy through URL') do |arg|
       options[:proxy_url] = arg
     end
 
-    opts.on('-l', '--local-host HOST',
-            'Listen on local HOST, not 127.0.0.1', ' ') do |arg|
+    opts.on('--local-host HOST',
+            "Listen on local HOST, not #{options[:local_host]}") do |arg|
       options[:local_host] = arg
+    end
+    opts.on('-l', '--local-port PORT',
+            "Listen on local PORT, not #{options[:local_port]}") do |arg|
+      options[:local_port] = arg
+    end
+
+    opts.on('-H', '--ext-host HOST', 'Connect to remote HOST') do |arg|
+      options[:remote_host] = arg
+    end
+
+    opts.on('-P', '--ext-port PORT', 'Connect to remote PORT', ' ') do |arg|
+      options[:remote_port] = arg
     end
 
     #
@@ -73,12 +98,12 @@ Options:
       options[:ssl_opts][:ca_path] = arg
     end
     opts.on('-E', '--cert FILE', 'Specify TLS client certificate') do |arg|
-      options[:ssl_opts][:cert] =
-        OpenSSL::X509::Certificate.new(File.open(arg))
+      File.open(arg).close # ensure exists
+      options[:ssl_opts][:cert_file] = arg
     end
     opts.on('-k', '--key FILE', 'Specify TLS client key', ' ') do |arg|
-      # TODO support other keys besides RSA
-      options[:ssl_opts][:key] = OpenSSL::PKey::RSA.new(File.open(arg))
+      File.open(arg).close # ensure exists
+      options[:ssl_opts][:key_file] = arg
     end
 
     #
@@ -87,32 +112,47 @@ Options:
 
   optparse.parse!(args)
 
-  config = Zokor::Config.new(options[:config_file])
-  options = options.merge(config.load_config)
+  config = Zokor::Config.new(options[:config_dir])
 
-  if args.empty?
-    # assume arguments being passed by config file
-    unless options[:local_host] && options[:local_port] &&
-           options[:remote_host] && options[:remote_port]
-      STDERR.puts optparse
-      STDERR.puts 'Error: must specify port and host by config or args'
-      exit 1
-    end
-  else
-    # host/port arguments being passed on command line
-    if args.length != 3
-      STDERR.puts optparse
-      STDERR.puts
-      exit 1
-    end
-    options[:local_port] = Integer(args.fetch(0))
-    options[:remote_host] = args.fetch(1)
-    options[:remote_port] = Integer(args.fetch(2))
+  begin
+    options = options.merge(config.load_config)
+  rescue Errno::ENOENT
+    # ignore unless config_dir was specified
+    raise if options[:config_dir]
   end
+
+  # options should be set by command line or config file
+  unless options[:local_host] && options[:local_port] &&
+         options[:remote_host] && options[:remote_port]
+    STDERR.puts optparse
+    STDERR.puts
+    if options[:init_config]
+      STDERR.puts 'Error: please pass --ext-host and --ext-port'
+    else
+      STDERR.puts 'Error: no config or --ext-host, --ext-port found'
+    end
+    exit 1
+  end
+
+  options[:local_port] = Integer(options[:local_port])
+  options[:remote_port] = Integer(options[:remote_port])
 
   # auto enable SSL if SSL options given
   if !options[:use_ssl] && !options[:ssl_opts].empty?
     options[:use_ssl] = true
+  end
+
+  if options[:init_config]
+    config.interactive_init(options)
+    exit
+  end
+
+  if options[:install_cert]
+    if config.interactive_install_cert
+      exit
+    else
+      exit 2
+    end
   end
 
   pm = Zokor::ProxyMagic.new(options.fetch(:local_host),

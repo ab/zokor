@@ -7,6 +7,9 @@ module Zokor
   class ProxyConnection
     BlockSize = 1024 * 4
 
+    BUILTIN_CA_FILE = File.join(File.dirname(__FILE__), '..', '..',
+                                'ca-certs-small.crt')
+
     # Create a new connection object to wrap a local client connection and
     # ferry packets through the proxies.
     #
@@ -20,16 +23,35 @@ module Zokor
     # @option opts [Boolean] :use_ssl Whether to use SSL/TLS for the external
     #   proxy connection
     # @option opts [Hash] :ssl_opts A hash of SSL options to pass to
-    #   {ProxyConnection#create_ssl_socket}
+    #   {ProxyConnection#create_ssl_socket}. Supports some custom options like
+    #   :key_file and :cert_file (override :key and :cert). Pass
+    #   :ca_file => :builtin to use the CA bundle that ships with this library.
     #
     def initialize(local_socket, remote_host, remote_port, opts={})
+      @local_socket = local_socket
+      @remote_host = remote_host
+      @remote_port = remote_port
+
       @proxy_url = opts[:proxy_url]
       @use_ssl = opts[:use_ssl]
       @ssl_opts = opts.fetch(:ssl_opts, {})
 
-      @local_socket = local_socket
-      @remote_host = remote_host
-      @remote_port = remote_port
+      # process ssl_opts
+      if @ssl_opts[:ca_file] == :builtin || @ssl_opts[:ca_file] == ':builtin'
+        log.debug('Using built-in CA file')
+        @ssl_opts[:ca_file] = BUILTIN_CA_FILE
+      end
+
+      key_file = @ssl_opts.delete(:key_file)
+      if key_file
+        # TODO: support other keys besides RSA
+        @ssl_opts[:key] = OpenSSL::PKey::RSA.new(File.open(key_file))
+      end
+
+      cert_file = @ssl_opts.delete(:cert_file)
+      if cert_file
+        @ssl_opts[:cert] = OpenSSL::X509::Certificate.new(File.open(cert_file))
+      end
 
       log.info('new local connection')
     end
@@ -149,17 +171,17 @@ module Zokor
       ssl_context = OpenSSL::SSL::SSLContext.new()
       ssl_context.verify_mode = OpenSSL::SSL::VERIFY_PEER
 
+      # by default, use default cert store
+      if !opts[:ca_file] && !opts[:ca_path]
+        ssl_context.cert_store = default_cert_store
+      end
+
       ssl_context.set_params(opts)
 
       # ssl_context.cert = File.open(opts[:cert]) if opts[:cert]
       # ssl_context.key = File.open(opts[:key]) if opts[:key]
       # ssl_context.ca_file = opts[:ca_file] if opts[:ca_file]
       # ssl_context.ca_path = opts[:ca_path] if opts[:ca_path]
-
-      # by default, use default cert store
-      if !opts[:ca_file] && !opts[:ca_path]
-        ssl_context.cert_store = default_cert_store
-      end
 
       ssl_socket = OpenSSL::SSL::SSLSocket.new(tcp_socket, ssl_context)
       ssl_socket.sync_close = true
