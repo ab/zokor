@@ -17,7 +17,9 @@ module Zokor
 
     def load_config(filename=nil)
       filename ||= config_yaml_file
-      YAML.load_file(filename)
+      ret = YAML.load_file(filename)
+      log.info("Read config from #{filename.inspect}")
+      ret
     end
 
     def config_yaml_file
