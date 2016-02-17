@@ -143,7 +143,15 @@ module Zokor
       label = "#{@remote_host}:#{@remote_port}"
       if @proxy_url
         log.info("Connecting to #{label} through proxy #{@proxy_url}")
-        @proxy = Proxifier::Proxy(@proxy_url)
+
+        popts = {}
+        popts[:user_agent] = ENV['HTTP_USER_AGENT'] if ENV['HTTP_USER_AGENT']
+
+        if popts[:user_agent]
+          log.debug('Passing User-Agent: ' + popts[:user_agent].inspect)
+        end
+
+        @proxy = Proxifier::Proxy(@proxy_url, popts)
         tcp_socket = @proxy.open(@remote_host, @remote_port)
       else
         log.info("Connecting to #{label}")
