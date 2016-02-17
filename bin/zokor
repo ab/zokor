@@ -163,6 +163,7 @@ Options:
   pm.run_loop
 end
 
-if $0 == __FILE__
+# Check if run as script, allowing for rubygems shims.
+if File.basename($0) == File.basename(__FILE__)
   parse_args(ARGV.dup)
 end
